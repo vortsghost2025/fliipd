@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fliipd - Triangle Flip Animation</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f0f23;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Segoe UI',system-ui,sans-serif;color:#e0e0e0;overflow:hidden}
+h1{margin-bottom:4px;font-size:1.3rem;font-weight:600;letter-spacing:3px;color:#f4d35e}
+#subtitle{margin-bottom:18px;font-size:.8rem;color:#666;letter-spacing:1px}
+canvas{border-radius:10px;background:#16213e;box-shadow:0 4px 40px rgba(0,0,0,.5)}
+.controls{margin-top:18px;display:flex;gap:12px}
+button{padding:9px 26px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#e0e0e0;font-size:.95rem;border-radius:6px;cursor:pointer;transition:all .2s}
+button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
+button:disabled{opacity:.3;cursor:default}
+#status{margin-top:10px;font-size:.85rem;color:#f4d35e;height:22px;text-align:center;letter-spacing:.5px}
+.legend{margin-top:14px;display:flex;gap:18px;font-size:.75rem;color:#999}
+.legend-item{display:flex;align-items:center;gap:5px}
+.swatch{width:12px;height:12px;border-radius:2px}
+</style>
+</head>
+<body>
+
+<h1>FLIIPD</h1>
+<div id="subtitle">Triangle Flip Sequence</div>
+<canvas id="c" width="600" height="460"></canvas>
+
+<div class="controls">
+  <button id="playBtn">&#9654; Play</button>
+  <button id="resetBtn">&#8634; Reset</button>
+</div>
+<div id="status">Press Play to start</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="swatch" style="background:#e63946"></div>Red</div>
+  <div class="legend-item"><div class="swatch" style="background:#f4d35e"></div>Yellow</div>
+  <div class="legend-item"><div class="swatch" style="background:#457b9d"></div>Blue</div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const playBtn = document.getElementById('playBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+const W = canvas.width;
+const H = canvas.height;
+
+const TRI_W = 120;
+const TRI_H = 70;
+const COL1_X = 170;
+const COL2_X = 310;
+const STACK_TOP_Y = 100;
+const ROW_GAP = 6;
+
+const COLORS = {
+  red:    { fill: '#e63946', dark: '#b82d38', light: '#ff4d5a' },
+  yellow: { fill: '#f4d35e', dark: '#c9a800', light: '#ffe680' },
+  blue:   { fill: '#457b9d', dark: '#2e5a75', light: '#5a9bc0' }
+};
+
+function drawTri(cx, y, w, h, color, darkColor, lightColor) {
+  ctx.beginPath();
+  ctx.moveTo(cx, y);
+  ctx.lineTo(cx - w / 2, y + h);
+  ctx.lineTo(cx + w / 2, y + h);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  if (lightColor) {
+    ctx.globalAlpha = 0.18;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 5);
+    ctx.lineTo(cx - w / 2 + 8, y + h - 3);
+    ctx.lineTo(cx + w / 2 - 8, y + h - 3);
+    ctx.closePath();
+    ctx.fillStyle = lightColor;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawHingeFlip(pivotX, baseY, triH, rowGap, angle, triDefs, direction) {
+  let cosA = Math.cos(angle);
+  let sinA = Math.sin(angle);
+  let absW = TRI_W * Math.abs(cosA);
+  let isBack = cosA < 0;
+
+  let sortedDefs = triDefs.map(d => ({...d}));
+  if (isBack) sortedDefs.reverse();
+
+  for (let i = 0; i < sortedDefs.length; i++) {
+    let def = sortedDefs[i];
+    let y = baseY + i * (triH + rowGap);
+    let c = COLORS[def.color];
+    let fillColor = isBack ? c.dark : c.fill;
+
+    if (direction === 'left') {
+      let triCx;
+      if (!isBack) {
+        triCx = pivotX + (absW / 2);
+      } else {
+        triCx = pivotX - (absW / 2);
+      }
+      if (absW > 2) {
+        drawTri(triCx, y, absW, triH, fillColor, null, isBack ? null : c.light);
+      }
+    } else {
+      let triCx;
+      if (!isBack) {
+        triCx = pivotX - (absW / 2);
+      } else {
+        triCx = pivotX + (absW / 2);
+      }
+      if (absW > 2) {
+        drawTri(triCx, y, absW, triH, fillColor, null, isBack ? null : c.light);
+      }
+    }
+  }
+}
+
+function drawStaticStack(baseX, baseY, triW, triH, rowGap, triDefs) {
+  for (let i = 0; i < triDefs.length; i++) {
+    let def = triDefs[i];
+    let y = baseY + i * (triH + rowGap);
+    let cx = baseX + triW / 2;
+    let c = COLORS[def.color];
+    drawTri(cx, y, triW, triH, c.fill, null, c.light);
+  }
+}
+
+function drawLabel(text, x, y) {
+  ctx.font = 'bold 11px Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.fillText(text, x, y);
+}
+
+function easeInOut(t) {
+  return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+}
+function easeOutBounce(t) {
+  if (t < 1/2.75) return 7.5625*t*t;
+  if (t < 2/2.75) return 7.5625*(t-=1.5/2.75)*t+.75;
+  if (t < 2.5/2.75) return 7.5625*(t-=2.25/2.75)*t+.9375;
+  return 7.5625*(t-=2.625/2.75)*t+.984375;
+}
+
+const PHASES = [
+  { name: 'idle',         dur: 600  },
+  { name: 'yellowFlip',   dur: 1200 },
+  { name: 'pause1',       dur: 350  },
+  { name: 'blueFall',     dur: 700  },
+  { name: 'pause2',       dur: 500  },
+  { name: 'combinedFlip', dur: 1400 },
+  { name: 'done',         dur: Infinity }
+];
+
+let phaseIdx = 0;
+let phaseTime = 0;
+let running = false;
+let lastTs = 0;
+let rafId = null;
+
+function phase() { return PHASES[phaseIdx].name; }
+function phaseT() { return Math.min(phaseTime / PHASES[phaseIdx].dur, 1); }
+
+function render() {
+  ctx.clearRect(0, 0, W, H);
+
+  let p = phase();
+  let t = phaseT();
+  let et = easeInOut(t);
+
+  let pivotCol = COL1_X + TRI_W;
+
+  if (p === 'idle') {
+    drawStaticStack(COL1_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'red'}, {color:'red'}
+    ]);
+    drawStaticStack(COL2_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'yellow'}
+    ]);
+    drawLabel('Red', COL1_X + TRI_W/2, STACK_TOP_Y + TRI_H/2);
+    drawLabel('Red', COL1_X + TRI_W/2, STACK_TOP_Y + TRI_H + ROW_GAP + TRI_H/2);
+    drawLabel('Yellow', COL2_X + TRI_W/2, STACK_TOP_Y + TRI_H/2);
+  }
+
+  else if (p === 'yellowFlip') {
+    drawStaticStack(COL1_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'red'}, {color:'red'}
+    ]);
+    drawHingeFlip(pivotCol, STACK_TOP_Y, TRI_H, ROW_GAP, et * Math.PI,
+      [{color:'yellow'}], 'left');
+  }
+
+  else if (p === 'pause1') {
+    drawStaticStack(COL1_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'yellow'}, {color:'red'}, {color:'red'}
+    ]);
+  }
+
+  else if (p === 'blueFall') {
+    drawStaticStack(COL1_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'yellow'}, {color:'red'}, {color:'red'}
+    ]);
+    let fallY = STACK_TOP_Y + (-180) * (1 - easeOutBounce(t));
+    drawStaticStack(COL2_X, fallY, TRI_W, TRI_H, ROW_GAP, [
+      {color:'blue'}
+    ]);
+  }
+
+  else if (p === 'pause2') {
+    drawStaticStack(COL1_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'yellow'}, {color:'red'}, {color:'red'}
+    ]);
+    drawStaticStack(COL2_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'blue'}
+    ]);
+  }
+
+  else if (p === 'combinedFlip') {
+    let angle = et * Math.PI;
+    let cosA = Math.cos(angle);
+    let isBack = cosA < 0;
+
+    // Draw blue triangle statically on the right (it's the anchor)
+    drawStaticStack(COL2_X, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'blue'}
+    ]);
+
+    // Draw the combined group flipping over
+    drawHingeFlip(pivotCol, STACK_TOP_Y, TRI_H, ROW_GAP, angle,
+      [{color:'yellow'}, {color:'red'}, {color:'red'}], 'right');
+  }
+
+  else if (p === 'done') {
+    // At the end of combinedFlip (angle=π), triangles end at pivot + TRI_W/2
+    // Set finalX to match the natural flipped position
+    let finalX = pivotCol - TRI_W;  // Triangles end up centered at pivot + TRI_W/2
+    drawStaticStack(finalX, STACK_TOP_Y, TRI_W, TRI_H, ROW_GAP, [
+      {color:'red'}, {color:'red'}, {color:'yellow'}, {color:'blue'}
+    ]);
+    drawLabel('Red',   finalX + TRI_W/2, STACK_TOP_Y + TRI_H/2);
+    drawLabel('Red',   finalX + TRI_W/2, STACK_TOP_Y + (TRI_H + ROW_GAP) + TRI_H/2);
+    drawLabel('Yellow',finalX + TRI_W/2, STACK_TOP_Y + 2*(TRI_H + ROW_GAP) + TRI_H/2);
+    drawLabel('Blue',  finalX + TRI_W/2, STACK_TOP_Y + 3*(TRI_H + ROW_GAP) + TRI_H/2);
+  }
+
+  drawPhaseText(p);
+  drawHingeLines(p, et);
+}
+
+function drawHingeLines(p, et) {
+  let pivotCol = COL1_X + TRI_W;
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+
+  if (p === 'idle' || p === 'yellowFlip') {
+    ctx.beginPath();
+    ctx.moveTo(pivotCol, STACK_TOP_Y - 10);
+    ctx.lineTo(pivotCol, STACK_TOP_Y + 3*(TRI_H + ROW_GAP) + 10);
+    ctx.stroke();
+  }
+  if (p === 'pause2' || p === 'combinedFlip') {
+    ctx.beginPath();
+    ctx.moveTo(pivotCol, STACK_TOP_Y - 10);
+    ctx.lineTo(pivotCol, STACK_TOP_Y + 3*(TRI_H + ROW_GAP) + 10);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
+
+function drawPhaseText(p) {
+  ctx.font = '13px Segoe UI, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#777';
+  let msg = '';
+  if (p === 'idle') msg = 'Initial: Red-Red  +  Yellow';
+  else if (p === 'yellowFlip') msg = 'Step 1: Yellow flips onto Red-Red...';
+  else if (p === 'pause1') msg = 'Yellow bonded with Red-Red';
+  else if (p === 'blueFall') msg = 'Blue falls into place...';
+  else if (p === 'pause2') msg = 'Ready for flip-back...';
+  else if (p === 'combinedFlip') msg = 'Step 2: Red-Red-Yellow flips onto Blue...';
+  else if (p === 'done') msg = 'Final: Red \u2192 Red \u2192 Yellow \u2192 Blue';
+  ctx.fillText(msg, W / 2, H - 25);
+}
+
+function updateStatus() {
+  const msgs = [
+    'Ready...',
+    'Yellow flips onto Red-Red',
+    'Bonded!',
+    'Blue triangle falls',
+    'Preparing flip-back...',
+    'Combined group flips onto Blue',
+    '\u2713 Complete: Red \u2192 Red \u2192 Yellow \u2192 Blue'
+  ];
+  statusEl.textContent = msgs[phaseIdx] || '';
+}
+
+function update(dt) {
+  if (!running) return;
+  phaseTime += dt;
+  if (phaseTime >= PHASES[phaseIdx].dur && PHASES[phaseIdx].dur !== Infinity) {
+    phaseTime = 0;
+    phaseIdx++;
+    if (phaseIdx >= PHASES.length - 1) {
+      phaseIdx = PHASES.length - 1;
+      running = false;
+      playBtn.disabled = false;
+    }
+  }
+  updateStatus();
+}
+
+function loop(ts) {
+  let dt = lastTs ? ts - lastTs : 16;
+  if (dt > 100) dt = 16;
+  lastTs = ts;
+  update(dt);
+  render();
+  rafId = requestAnimationFrame(loop);
+}
+
+function play() {
+  resetState();
+  running = true;
+  playBtn.disabled = true;
+  lastTs = 0;
+  rafId = requestAnimationFrame(loop);
+}
+
+function resetState() {
+  running = false;
+  phaseIdx = 0;
+  phaseTime = 0;
+  lastTs = 0;
+  playBtn.disabled = false;
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+  render();
+  updateStatus();
+}
+
+playBtn.addEventListener('click', play);
+resetBtn.addEventListener('click', resetState);
+
+render();
+updateStatus();
+</script>
+
+</body>
+</html>
