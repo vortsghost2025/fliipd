@@ -13,6 +13,8 @@ canvas{background:#16213e;border-radius:10px;box-shadow:0 4px 40px rgba(0,0,0,.5
 #status{margin-top:10px;font-size:.9rem;color:#f4d35e;height:24px;text-align:center}
 #score{margin-top:4px;font-size:1rem;color:#7df9ff}
 #next-bar{margin-top:12px;font-size:.8rem;color:#aaa;text-align:center}
+#nextContainer{display:flex;flex-direction:column;align-items:center;gap:6px}
+#next{background:#0d1b2a;border-radius:8px;border:2px solid rgba(255,255,255,0.1)}
 .controls{margin-top:14px;display:flex;gap:10px;justify-content:center}
 button{padding:8px 22px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#e0e0e0;font-size:.85rem;border-radius:6px;cursor:pointer;transition:all .2s}
 button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
@@ -22,8 +24,18 @@ button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
 <body>
 
 <h1>FLIIPD</h1>
-<div id="subtitle">Triangle Circle Game</div>
-<canvas id="c" width="560" height="440"></canvas>
+<div id="subtitle" style="display:flex;align-items:center;gap:12px;justify-content:center">
+  <span>Triangle Circle Game</span>
+  <span style="color:#888">|</span>
+  <span style="color:#f4d35e">High Score: <span id="highScore">0</span></span>
+</div>
+<div style="display:flex;align-items:center;gap:24px">
+  <canvas id="c" width="500" height="500"></canvas>
+  <div id="nextContainer" style="text-align:center">
+    <div style="color:#888;font-size:.8rem;margin-bottom:8px">Next Color:</div>
+    <canvas id="next" width="80" height="80"></canvas>
+  </div>
+</div>
 
 <div id="status">Click a stack to select, then click adjacent or across to flip</div>
 <div id="score">Score: 0</div>
@@ -44,7 +56,7 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const scoreEl = document.getElementById('score');
-const nextBar = document.getElementById('next-bar');
+const highScoreEl = document.getElementById('highScore');
 const resetBtn = document.getElementById('resetBtn');
 
 const W = canvas.width;
@@ -54,6 +66,7 @@ const CY = H / 2;
 const RADIUS = 135;
 const TRI_W = 100;
 const TRI_H = 50;
+const STACK_GAP = 4;
 const MAX_STACK = 6;
 
 const COLORS = [
@@ -69,16 +82,16 @@ const COLORS = [
 ];
 
 // Game state
-let stacks = [];       // array of 6 stacks; each stack = [colorIdx, colorIdx, ...]
-let selected = -1;      // currently selected stack index
+let stacks = [];
+let selected = -1;
 let score = 0;
 let gameOver = false;
-let history = [];       // undo stack
+let history = [];
+let currentNextColor = 0; // colorIdx shown in Next panel
 
 function initGame() {
   stacks = [];
   for (let i = 0; i < 6; i++) {
-    // Each stack starts with 1–3 random triangles
     const count = Math.floor(Math.random() * 3) + 1;
     const stack = [];
     for (let j = 0; j < count; j++) {
@@ -90,27 +103,33 @@ function initGame() {
   score = 0;
   gameOver = false;
   history = [];
+  currentNextColor = 0;
+
+  // Load saved high score
+  let savedHigh = 0;
+  try { savedHigh = parseInt(localStorage.getItem('fliipd_highscore') || '0'); } catch(e) {}
+  highScoreEl.textContent = savedHigh;
+  currentNextColor = Math.floor(Math.random() * COLORS.length);
+
   updateUI();
+  drawNext();
 }
 
 function getSlotPos(i) {
-  // Return the top-center point of the stack at index i
   const angle = (i * Math.PI / 3) + Math.PI / 2;
-  const totalHeight = stacks[i].length * (TRI_H + 5);
   return {
     x: CX + Math.cos(angle) * RADIUS,
-    y: CY + Math.sin(angle) * RADIUS - totalHeight - 30,
-    angle: angle + Math.PI / 2,
-    stack: stacks[i]
+    y: CY + Math.sin(angle) * RADIUS,
+    angle: angle + Math.PI / 2
   };
 }
 
 function getValidTargets(from) {
   if (from < 0) return [];
   return [
-    (from + 1) % 6,   // clockwise neighbor
-    (from - 1 + 6) % 6, // counter-clockwise neighbor
-    (from + 3) % 6    // directly across
+    (from + 1) % 6,
+    (from - 1 + 6) % 6,
+    (from + 3) % 6
   ];
 }
 
@@ -135,31 +154,46 @@ function drawTriangle(cx, cy, angle, colorIdx) {
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
-  // Draw dashed lines between adjacent positions
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([6, 4]);
+  // Draw connecting lines between adjacent slots (hexagon edges)
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
   for (let i = 0; i < 6; i++) {
-    const a1 = (i * Math.PI / 3) + Math.PI / 2;
-    const a2 = (((i + 1) % 6) * Math.PI / 3) + Math.PI / 2;
-    ctx.beginPath();
-    ctx.arc(CX, CY, RADIUS, a1 - Math.PI / 6, a2 + Math.PI / 6);
-    ctx.stroke();
+    const pos = getSlotPos(i);
+    const nextPos = getSlotPos((i + 1) % 6);
+    if (i === 0) ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(nextPos.x, nextPos.y);
   }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw dashed hexagon guide (grid)
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 4]);
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const pos = getSlotPos(i);
+    const nextPos = getSlotPos((i + 1) % 6);
+    if (i === 0) ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(nextPos.x, nextPos.y);
+  }
+  ctx.closePath();
+  ctx.stroke();
   ctx.setLineDash([]);
 
   // Draw valid move connections from selected triangle
   if (selected >= 0) {
     const targets = getValidTargets(selected);
-    ctx.strokeStyle = 'rgba(247, 37, 133, 0.4)';
+    ctx.setLineDash([6, 3]);
     ctx.lineWidth = 2;
-    ctx.setLineDash([8, 4]);
     targets.forEach(t => {
-      const pos = getSlotPos(i);
-      const tar = getSlotPos(t);
+      const sp = getSlotPos(selected);
+      const tp = getSlotPos(t);
+      ctx.strokeStyle = 'rgba(247, 37, 133, 0.4)';
       ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-      ctx.lineTo(tar.x, tar.y);
+      ctx.moveTo(sp.x, sp.y);
+      ctx.lineTo(tp.x, tp.y);
       ctx.stroke();
     });
     ctx.setLineDash([]);
@@ -167,52 +201,53 @@ function draw() {
 
   // Draw stacks
   for (let i = 0; i < 6; i++) {
+    if (stacks[i].length === 0) continue;
     const pos = getSlotPos(i);
     for (let j = 0; j < stacks[i].length; j++) {
-      const ty = pos.y - (stacks[i].length - 1 - j) * (TRI_H + 5);
+      const ty = pos.y - (stacks[i].length - 1 - j) * (TRI_H + STACK_GAP);
       drawTriangle(pos.x, ty, pos.angle, stacks[i][j]);
     }
 
-    // Highlight valid targets
+    // Highlight valid target slots
     if (selected >= 0) {
       const targets = getValidTargets(selected);
       if (targets.includes(i) && stacks[i].length < MAX_STACK) {
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y - stacks[i].length * (TRI_H + 5), 8, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(247, 37, 133, 0.8)';
         ctx.fill();
       }
     }
 
-    // Selection dot
+    // Selection indicator
     if (i === selected) {
-      const topY = pos.y - stacks[i].length * (TRI_H + 5);
       ctx.beginPath();
-      ctx.arc(pos.x, topY, 8, 0, Math.PI * 2);
+      ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
       ctx.fillStyle = '#f72585';
       ctx.fill();
     }
 
-    // Stack count badge
+    // Stack count badge (on slot)
     if (stacks[i].length > 1) {
-      const topY = pos.y - stacks[i].length * (TRI_H + 5);
-      ctx.font = 'bold 11px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(stacks[i].length, pos.x, topY - 14);
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.fillText(stacks[i].length, pos.x, pos.y - TRI_H - 14);
     }
   }
 
-  // Center label
-  ctx.font = '12px sans-serif';
+  // Center: FLIIPD title
+  ctx.font = 'bold 22px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(125, 249, 255, 0.15)';
   ctx.fillText('FLIIPD', CX, CY - 4);
 }
 
 function findAndRemoveMatching(fromSlot, toSlot) {
-  let removedAny = false;
+  const toRemove = new Set();
+
   for (let s = 0; s < 6; s++) {
     if (stacks[s].length < 3) continue;
     const topColor = stacks[s][stacks[s].length - 1];
@@ -222,21 +257,41 @@ function findAndRemoveMatching(fromSlot, toSlot) {
       else break;
     }
     if (run >= 3) {
-      stacks[s].splice(stacks[s].length - run, run);
-      score += run * 50;        // points per triangle cleared
+      for (let k = stacks[s].length - run; k < stacks[s].length; k++) {
+        if (!toRemove.has(s)) {
+          toRemove.add(s);
+        }
+      }
+      score += run * 50;
       statusEl.textContent = `Cleared ${run} ${COLORS[topColor].name}! +${run * 50}`;
-      removedAny = true;
     }
   }
-  if (!removedAny) {
+
+  if (toRemove.size > 0) {
+    toRemove.forEach(s => {
+      stacks[s] = [];
+    });
+  }
+  if (toRemove.size === 0) {
     statusEl.textContent = 'No stack of 3+ matching colors';
   }
 }
 
 function updateUI() {
+  // Load saved high score
+  let savedHigh = 0;
+  try { savedHigh = parseInt(localStorage.getItem('fliipd_highscore') || '0'); } catch(e) {}
+  
+  if (score > savedHigh) {
+    savedHigh = score;
+    try { localStorage.setItem('fliipd_highscore', savedHigh.toString()); } catch(e) {}
+  }
+  
+  highScoreEl.textContent = savedHigh;
   const total = stacks.reduce((sum, s) => sum + s.length, 0);
   const stacksLeft = stacks.filter(s => s.length > 0).length;
   scoreEl.textContent = `Score: ${score} | Triangles: ${total} | Stacks: ${stacksLeft}/${6}`;
+  statusEl.textContent = gameOver ? `Game Over! Final: ${score} pts` : statusEl.textContent;
 }
 
 function handleClick(e) {
@@ -249,7 +304,7 @@ function handleClick(e) {
   for (let i = 0; i < 6; i++) {
     if (stacks[i].length === 0) continue;
     const pos = getSlotPos(i);
-    const topY = pos.y - stacks[i].length * (TRI_H + 5);
+    const topY = pos.y - stacks[i].length * (TRI_H + STACK_GAP);
     const dx = mx - pos.x;
     const dy = my - topY;
     if (Math.sqrt(dx * dx + dy * dy) < TRI_H + 20) {
@@ -298,6 +353,10 @@ function handleClick(e) {
   stacks[clicked].push(triColor);
   score += 5;
 
+  // Next color preview: show random color for the next flip
+  currentNextColor = Math.floor(Math.random() * COLORS.length);
+  drawNext();
+
   // Check for matching stacks and remove
   findAndRemoveMatching(selected, clicked);
 
@@ -326,6 +385,35 @@ function canMakeAnyMove() {
     }
   }
   return false;
+}
+
+function drawNext() {
+  const nextCanvas = document.getElementById('next');
+  if (!nextCanvas) return;
+  const nctx = nextCanvas.getContext('2d');
+  const w = nextCanvas.width;
+  const h = nextCanvas.height;
+  nctx.clearRect(0, 0, w, h);
+
+  nctx.save();
+  nctx.translate(w / 2, h / 2);
+  nctx.rotate(Math.PI / 2);
+
+  // Preview triangle slightly smaller than game triangles
+  const pw = Math.min(w, h) * 0.59;
+  const ph = pw * (TRI_H / TRI_W);
+
+  nctx.beginPath();
+  nctx.moveTo(0, ph);
+  nctx.lineTo(-pw / 2, -ph);
+  nctx.lineTo(pw / 2, -ph);
+  nctx.closePath();
+  nctx.fillStyle = COLORS[currentNextColor].fill;
+  nctx.fill();
+  nctx.strokeStyle = COLORS[currentNextColor].dark;
+  nctx.lineWidth = 2;
+  nctx.stroke();
+  nctx.restore();
 }
 
 resetBtn.addEventListener('click', () => {
