@@ -92,7 +92,7 @@ let currentNextColor = 0; // colorIdx shown in Next panel
 function initGame() {
   stacks = [];
   for (let i = 0; i < 6; i++) {
-    const count = Math.floor(Math.random() * 3) + 1;
+    const count = 1; // Start with exactly 1 triangle per slot = 6 total
     const stack = [];
     for (let j = 0; j < count; j++) {
       stack.push(Math.floor(Math.random() * COLORS.length));
@@ -199,50 +199,68 @@ function draw() {
     ctx.setLineDash([]);
   }
 
-  // Draw stacks
+  // Draw stacks — draw topmost triangle first so lower ones layer naturally
   for (let i = 0; i < 6; i++) {
     if (stacks[i].length === 0) continue;
     const pos = getSlotPos(i);
-    for (let j = 0; j < stacks[i].length; j++) {
-      const ty = pos.y - (stacks[i].length - 1 - j) * (TRI_H + STACK_GAP);
+    for (let j = stacks[i].length - 1; j >= 0; j--) {
+      const ty = pos.y - j * (TRI_H + STACK_GAP);
       drawTriangle(pos.x, ty, pos.angle, stacks[i][j]);
     }
 
-    // Highlight valid target slots
+    // Highlight valid target slots (display above slot, level with top triangle)
     if (selected >= 0) {
       const targets = getValidTargets(selected);
       if (targets.includes(i) && stacks[i].length < MAX_STACK) {
+        const dotY = pos.y - TRI_H - 4;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(247, 37, 133, 0.8)';
+        ctx.arc(pos.x, dotY, 8, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(247, 37, 133, 0.9)';
         ctx.fill();
       }
     }
 
-    // Selection indicator
+    // Selection indicator (on current slot, level with top triangle)
     if (i === selected) {
+      const dotY = pos.y - TRI_H - 4;
       ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 7, 0, Math.PI * 2);
+      ctx.arc(pos.x, dotY, 8, 0, Math.PI * 2);
       ctx.fillStyle = '#f72585';
       ctx.fill();
     }
 
-    // Stack count badge (on slot)
+    // Stack count badge (above slot)
     if (stacks[i].length > 1) {
-      ctx.font = 'bold 12px sans-serif';
+      const badgeY = pos.y - TRI_H - 22;
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fillText(stacks[i].length, pos.x, pos.y - TRI_H - 14);
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(stacks[i].length, pos.x, badgeY);
     }
   }
 
-  // Center: FLIIPD title
-  ctx.font = 'bold 22px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(125, 249, 255, 0.15)';
-  ctx.fillText('FLIIPD', CX, CY - 4);
+    // Center: FLIIPD logo image
+  try {
+    if (!window._fliipdLogoImg) {
+      window._fliipdLogoImg = new Image();
+      window._fliipdLogoImg.src = 'fliipdloigo.jpg';
+    }
+    if (window._fliipdLogoImg.complete && window._fliipdLogoImg.naturalWidth > 0) {
+      const lw = 90;
+      const lh = (window._fliipdLogoImg.naturalHeight / window._fliipdLogoImg.naturalWidth) * lw;
+      ctx.drawImage(window._fliipdLogoImg, CX - lw / 2, CY - lh / 2 - 15, lw, lh);
+    } else {
+      // Fallback: bold text
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillStyle = 'rgba(125, 249, 255, 0.25)';
+      ctx.fillText('FLIIPD', CX, CY - 4);
+    }
+  } catch(e) {
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillStyle = 'rgba(125, 249, 255, 0.25)';
+    ctx.fillText('FLIIPD', CX, CY - 4);
+  }
 }
 
 function findAndRemoveMatching(fromSlot, toSlot) {
@@ -300,13 +318,13 @@ function handleClick(e) {
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
 
+  // Find which stack was clicked
   let clicked = -1;
   for (let i = 0; i < 6; i++) {
     if (stacks[i].length === 0) continue;
     const pos = getSlotPos(i);
-    const topY = pos.y - stacks[i].length * (TRI_H + STACK_GAP);
     const dx = mx - pos.x;
-    const dy = my - topY;
+    const dy = my - pos.y;   // slot centre = triangle visual centre for a 1-triangle stack
     if (Math.sqrt(dx * dx + dy * dy) < TRI_H + 20) {
       clicked = i;
       break;
@@ -314,23 +332,23 @@ function handleClick(e) {
   }
   if (clicked === -1) return;
 
+  // First click: select this stack
   if (selected === -1) {
-    // First click: select
     selected = clicked;
     statusEl.textContent = `Selected stack #${clicked + 1}. Click adjacent or across to flip.`;
     draw();
     return;
   }
 
+  // Clicking same stack again: deselect
   if (clicked === selected) {
-    // Deselect
     selected = -1;
     statusEl.textContent = 'Deselected. Click a stack to select.';
     draw();
     return;
   }
 
-  // Second click: check if it's a valid target
+  // Second click: check it's a valid target
   const validTargets = getValidTargets(selected);
   if (!validTargets.includes(clicked)) {
     statusEl.textContent = 'Invalid! Must click beside or directly across.';
@@ -342,38 +360,37 @@ function handleClick(e) {
     draw();
     return;
   }
-  if (stacks[selected].length === 0) {
-    selected = -1;
-    draw();
-    return;
-  }
 
-  // Flip: pop top triangle from selected, push onto clicked
-  const triColor = stacks[selected].pop();
+  // Flip: pop top triangle FROM selected, push onto clicked
+  const fromSlot = selected;           // save index before we reset selected
+  const triColor   = stacks[selected].pop();
   stacks[clicked].push(triColor);
   score += 5;
 
-  // Next color preview: show random color for the next flip
+  // Replace the flipped triangle with the next-up colour so every slot stays 1+
+  stacks[fromSlot].push(currentNextColor);
+
+  // Advance the preview colour for the player
   currentNextColor = Math.floor(Math.random() * COLORS.length);
   drawNext();
 
-  // Check for matching stacks and remove
-  findAndRemoveMatching(selected, clicked);
+  // Check for 3+ matching stacks after this flip
+  findAndRemoveMatching(fromSlot, clicked);
 
   selected = -1;
   updateUI();
 
-  // Win/lose check
+  // Win / lose check
   const aliveStacks = stacks.filter(s => s.length > 0).length;
-  if (aliveStacks === 0) {
-    gameOver = true;
-    statusEl.textContent = 'You cleared all stacks!';
-  } else if (!canMakeAnyMove()) {
-    gameOver = true;
-    statusEl.textContent = `Game over! No valid moves. Final score: ${score}`;
-  }
+if (aliveStacks === 0) {
+  gameOver = true;
+  statusEl.textContent = 'You cleared all stacks!';
+} else if (!canMakeAnyMove()) {
+  gameOver = true;
+  statusEl.textContent = `Game over! No valid moves. Final score: ${score}`;
+}
 
-  draw();
+draw();
 }
 
 function canMakeAnyMove() {
