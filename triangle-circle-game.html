@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Triangle Circle - Color Flip Game</title>
+<title>FLIIPD - Triangle Game</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a23;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Segoe UI',system-ui,sans-serif;color:#e0e0e0}
@@ -12,7 +12,7 @@ h1{margin-bottom:8px;font-size:1.5rem;font-weight:600;letter-spacing:3px;color:#
 canvas{background:#16213e;border-radius:12px;box-shadow:0 4px 50px rgba(0,0,0,.6);cursor:pointer}
 #status{margin-top:14px;font-size:.9rem;color:#7df9ff;height:24px;text-align:center}
 #score{margin-top:6px;font-size:1rem;color:#f4d35e}
-.controls{margin-top:14px;display:flex;gap:10px}
+.controls{margin-top:14px;display:flex;gap:10px;justify-content:center}
 button{padding:8px 20px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#e0e0e0;font-size:.85rem;border-radius:6px;cursor:pointer;transition:all .2s}
 button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
 #instructions{margin-top:20px;font-size:.75rem;color:#888;max-width:500px;text-align:center;line-height:1.5}
@@ -22,24 +22,18 @@ button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
 
 <h1>FLIIPD</h1>
 <div id="subtitle">Triangle Circle Game</div>
-<div style="display:flex;align-items:center;gap:30px">
-  <canvas id="c" width="500" height="500"></canvas>
-  <div id="nextContainer" style="text-align:center">
-    <div style="color:#888;font-size:.8rem;margin-bottom:8px">Next Color:</div>
-    <canvas id="next" width="80" height="80"></canvas>
-  </div>
-</div>
+<canvas id="c" width="500" height="500"></canvas>
 
-<div id="status">Click a triangle to start</div>
-<div id="score">Score: 0</div>
+<div id="status">Click a triangle to remove matching color</div>
+<div id="score">Score: 0 | Triangles left: 6</div>
 
 <div class="controls">
   <button id="resetBtn">&#8634; Reset</button>
 </div>
 
 <div id="instructions">
-  Flip triangles that are beside or directly across from the last flipped triangle.<br>
-  Get 3 consecutive triangles of the same color to remove them.
+  Click any triangle — if 3 consecutive triangles share the same color they all disappear and you score points.<br>
+  Clear all 6 triangles to win.
 </div>
 
 <script>
@@ -57,20 +51,22 @@ const RADIUS = 140;
 const TRI_W = 100;
 const TRI_H = 50;
 
+// 9-color palette: Primary 3 + Secondary 3 + Tinted 3
 const COLORS = [
-  { name: 'Red',    fill: '#e63946', dark: '#b82d38' },
-  { name: 'Yellow', fill: '#f4d35e', dark: '#d4a20a' },
-  { name: 'Blue',   fill: '#457b9d', dark: '#2e5a75' },
-  { name: 'Green',  fill: '#2a9d8f', dark: '#1f7a6a' },
-  { name: 'Purple', fill: '#9d4edd', dark: '#7a37b8' },
-  { name: 'Orange', fill: '#ff6b35', dark: '#cc5225' }
+  { name: 'Red',       fill: '#e63946', dark: '#b82d38' },
+  { name: 'Yellow',    fill: '#f4d35e', dark: '#d4a20a' },
+  { name: 'Blue',      fill: '#457b9d', dark: '#2e5a75' },
+  { name: 'Orange',    fill: '#ff6b35', dark: '#cc5225' },
+  { name: 'Green',     fill: '#2a9d8f', dark: '#1f7a6a' },
+  { name: 'Purple',    fill: '#9d4edd', dark: '#7a37b8' },
+  { name: 'Pink',      fill: '#f72585', dark: '#c41e6a' },
+  { name: 'Grey',      fill: '#adb5bd', dark: '#868e96' },
+  { name: 'Beige',     fill: '#d4a373', dark: '#b07d4a' }
 ];
 
 let triangles = [];
-let lastFlipped = -1;
 let score = 0;
 let gameOver = false;
-let nextColor = 0;
 
 function initTriangles() {
   triangles = [];
@@ -80,105 +76,55 @@ function initTriangles() {
       alive: true
     });
   }
-  lastFlipped = -1;
   score = 0;
   gameOver = false;
-  nextColor = Math.floor(Math.random() * COLORS.length);
   updateUI();
-  drawNext();
+  statusEl.textContent = 'Click a triangle to remove matching colors';
 }
 
 function getTrianglePos(i) {
-  const angle = (i * Math.PI / 3) + Math.PI / 2;  // Position around circle
+  const angle = (i * Math.PI / 3) + Math.PI / 2;
   return {
     x: CX + Math.cos(angle) * RADIUS,
     y: CY + Math.sin(angle) * RADIUS,
-    angle: angle + Math.PI / 2  // Rotate 90° so short ends line up at center
+    angle: angle + Math.PI / 2
   };
 }
 
-function drawTriangle(i, cx, cy, angle, colorIdx, highlight = false) {
+function drawTriangle(cx, cy, angle, colorIdx) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
-  
+
   const color = COLORS[colorIdx];
-  // Isosceles triangle: base outward, point inward
   ctx.beginPath();
-  ctx.moveTo(0, TRI_H);          // Bottom point (outward)
-  ctx.lineTo(-TRI_W / 2, 0);   // Top left corner (inner)
-  ctx.lineTo(TRI_W / 2, 0);    // Top right corner (inner)
+  ctx.moveTo(0, TRI_H);
+  ctx.lineTo(-TRI_W / 2, 0);
+  ctx.lineTo(TRI_W / 2, 0);
   ctx.closePath();
-  
-  if (highlight) {
-    ctx.shadowColor = '#fff';
-    ctx.shadowBlur = 15;
-  }
-  
   ctx.fillStyle = color.fill;
   ctx.fill();
   ctx.strokeStyle = color.dark;
   ctx.lineWidth = 2;
   ctx.stroke();
-  
-  if (highlight) ctx.shadowBlur = 0;
-  
   ctx.restore();
 }
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  
   for (let i = 0; i < 6; i++) {
     if (!triangles[i].alive) continue;
-    
     const pos = getTrianglePos(i);
-    const validMove = isCanFlip(i);
-    drawTriangle(i, pos.x, pos.y, pos.angle, triangles[i].color, 
-                 validMove && lastFlipped !== -1);
+    drawTriangle(pos.x, pos.y, pos.angle, triangles[i].color);
   }
-  
-  // Draw center dot (subtle)
   ctx.beginPath();
   ctx.arc(CX, CY, 3, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255,255,255,0.1)';
   ctx.fill();
 }
 
-function isCanFlip(pos) {
-  if (lastFlipped === -1) return true;
-  const diff = Math.abs(pos - lastFlipped);
-  return diff === 1 || diff === 5 || diff === 3;
-}
-
-function flipTriangle(pos) {
-  if (!triangles[pos].alive) return;
-  if (!isCanFlip(pos)) {
-    statusEl.textContent = 'Invalid move! Must flip beside or across triangle.';
-    return;
-  }
-  
-  triangles[pos].color = nextColor;
-  lastFlipped = pos;
-  score += 10;
-  
-  // Generate next random color
-  nextColor = Math.floor(Math.random() * COLORS.length);
-  drawNext();
-  
-  checkAndRemove();
-  updateUI();
-  
-  if (checkWin()) {
-    gameOver = true;
-    statusEl.textContent = '🎉 Congratulations! You cleared all triangles!';
-  }
-}
-
-function checkAndRemove() {
+function getConsecutiveTriplets() {
   const toRemove = [];
-  
-  // Check each possible triplet
   for (let start = 0; start < 6; start++) {
     let colors = [];
     for (let i = 0; i < 3; i++) {
@@ -192,99 +138,72 @@ function checkAndRemove() {
       }
     }
   }
-  
-  if (toRemove.length > 0) {
-    // Remove duplicates
-    toRemove.forEach(pos => {
-      if (triangles[pos].alive) {
-        triangles[pos].alive = false;
-      }
-    });
-    score += 100 * (toRemove.length / 3);
-    statusEl.textContent = `Removed ${toRemove.length / 3} set of triangles!`;
-  } else {
-    statusEl.textContent = 'Keep going!';
-  }
-}
-
-function checkWin() {
-  return triangles.every(t => !t.alive);
-}
-
-function updateUI() {
-  scoreEl.textContent = `Score: ${score}`;
-}
-
-function drawNext() {
-  const nextCanvas = document.getElementById('next');
-  const nextCtx = nextCanvas.getContext('2d');
-  const w = nextCanvas.width;
-  const h = nextCanvas.height;
-  const cx = w / 2;
-  const cy = h / 2;
-  
-  nextCtx.clearRect(0, 0, w, h);
-  
-  const color = COLORS[nextColor];
-  nextCtx.save();
-  nextCtx.translate(cx, cy);
-  nextCtx.rotate(Math.PI / 2);
-  
-  // Smaller triangle for preview
-  const previewW = 30;
-  const previewH = 25;
-  
-  nextCtx.beginPath();
-  nextCtx.moveTo(0, previewH);
-  nextCtx.lineTo(-previewW / 2, -previewH);
-  nextCtx.lineTo(previewW / 2, -previewH);
-  nextCtx.closePath();
-  
-  nextCtx.fillStyle = color.fill;
-  nextCtx.fill();
-  nextCtx.strokeStyle = color.dark;
-  nextCtx.lineWidth = 2;
-  nextCtx.stroke();
-  
-  nextCtx.restore();
+  return toRemove;
 }
 
 function handleClick(e) {
   if (gameOver) return;
-  
+
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
-  
+
+  let clickedIdx = -1;
   for (let i = 0; i < 6; i++) {
     if (!triangles[i].alive) continue;
-    
     const pos = getTrianglePos(i);
     const dx = mx - pos.x;
     const dy = my - pos.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    // Simple collision: within triangle bounds
     if (dist < TRI_H + 20) {
-      flipTriangle(i);
+      clickedIdx = i;
       break;
     }
   }
-  
+
+  if (clickedIdx === -1) return;
+
+  // Check for matching consecutive triplets
+  const toRemove = getConsecutiveTriplets();
+
+  if (toRemove.length > 0) {
+    // Remove all matching triangles
+    const removed = [];
+    toRemove.forEach(pos => {
+      if (triangles[pos].alive && !removed.includes(pos)) {
+        triangles[pos].alive = false;
+        removed.push(pos);
+      }
+    });
+    score += 100 * (removed.length / 3);
+    statusEl.textContent = `Removed ${removed.length} matching triangles!`;
+  } else {
+    statusEl.textContent = 'No 3 consecutive same colors found';
+  }
+
+  updateUI();
+
+  if (triangles.every(t => !t.alive)) {
+    gameOver = true;
+    statusEl.textContent = 'You cleared all triangles!';
+  }
+
   draw();
+}
+
+function updateUI() {
+  const alive = triangles.filter(t => t.alive).length;
+  scoreEl.textContent = `Score: ${score} | Triangles left: ${alive}`;
 }
 
 canvas.addEventListener('click', handleClick);
 resetBtn.addEventListener('click', () => {
   initTriangles();
   draw();
-  drawNext();
-  statusEl.textContent = 'Game reset! Click a triangle to start.';
 });
 
 initTriangles();
 draw();
-drawNext();
 </script>
 
 </body>
