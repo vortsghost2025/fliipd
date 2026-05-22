@@ -3,37 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FLIIPD - Triangle Game</title>
+<title>FLIIPD - Triangle Stack Game</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a23;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Segoe UI',system-ui,sans-serif;color:#e0e0e0}
-h1{margin-bottom:8px;font-size:1.5rem;font-weight:600;letter-spacing:3px;color:#7df9ff}
-#subtitle{margin-bottom:12px;font-size:.8rem;color:#666}
-canvas{background:#16213e;border-radius:12px;box-shadow:0 4px 50px rgba(0,0,0,.6);cursor:pointer}
-#status{margin-top:14px;font-size:.9rem;color:#7df9ff;height:24px;text-align:center}
-#score{margin-top:6px;font-size:1rem;color:#f4d35e}
+h1{margin-bottom:4px;font-size:1.6rem;font-weight:600;letter-spacing:3px;color:#7df9ff}
+#subtitle{margin-bottom:10px;font-size:.75rem;color:#666}
+canvas{background:#16213e;border-radius:10px;box-shadow:0 4px 40px rgba(0,0,0,.5);cursor:pointer}
+#status{margin-top:10px;font-size:.9rem;color:#f4d35e;height:24px;text-align:center}
+#score{margin-top:4px;font-size:1rem;color:#7df9ff}
+#next-bar{margin-top:12px;font-size:.8rem;color:#aaa;text-align:center}
 .controls{margin-top:14px;display:flex;gap:10px;justify-content:center}
-button{padding:8px 20px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#e0e0e0;font-size:.85rem;border-radius:6px;cursor:pointer;transition:all .2s}
+button{padding:8px 22px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.05);color:#e0e0e0;font-size:.85rem;border-radius:6px;cursor:pointer;transition:all .2s}
 button:hover{background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.4)}
-#instructions{margin-top:20px;font-size:.75rem;color:#888;max-width:500px;text-align:center;line-height:1.5}
+#instructions{margin-top:14px;font-size:.73rem;color:#666;max-width:520px;text-align:center;line-height:1.6}
 </style>
 </head>
 <body>
 
 <h1>FLIIPD</h1>
 <div id="subtitle">Triangle Circle Game</div>
-<canvas id="c" width="500" height="500"></canvas>
+<canvas id="c" width="560" height="440"></canvas>
 
-<div id="status">Click a triangle to remove matching color</div>
-<div id="score">Score: 0 | Triangles left: 6</div>
+<div id="status">Click a stack to select, then click adjacent or across to flip</div>
+<div id="score">Score: 0</div>
+<div id="next-bar"></div>
 
 <div class="controls">
   <button id="resetBtn">&#8634; Reset</button>
 </div>
 
 <div id="instructions">
-  Click any triangle — if 3 consecutive triangles share the same color they all disappear and you score points.<br>
-  Clear all 6 triangles to win.
+  Click a stack to select it, then click the stack beside it or directly across to flip one triangle over.<br>
+  The flipped triangle stacks on top of the destination. Remove stacks of 3 or more matching triangles.<br>
+  Max stack height: 6 triangles per position.
 </div>
 
 <script>
@@ -41,61 +44,80 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const scoreEl = document.getElementById('score');
+const nextBar = document.getElementById('next-bar');
 const resetBtn = document.getElementById('resetBtn');
 
 const W = canvas.width;
 const H = canvas.height;
 const CX = W / 2;
 const CY = H / 2;
-const RADIUS = 140;
+const RADIUS = 135;
 const TRI_W = 100;
 const TRI_H = 50;
+const MAX_STACK = 6;
 
-// 9-color palette: Primary 3 + Secondary 3 + Tinted 3
 const COLORS = [
-  { name: 'Red',       fill: '#e63946', dark: '#b82d38' },
-  { name: 'Yellow',    fill: '#f4d35e', dark: '#d4a20a' },
-  { name: 'Blue',      fill: '#457b9d', dark: '#2e5a75' },
-  { name: 'Orange',    fill: '#ff6b35', dark: '#cc5225' },
-  { name: 'Green',     fill: '#2a9d8f', dark: '#1f7a6a' },
-  { name: 'Purple',    fill: '#9d4edd', dark: '#7a37b8' },
-  { name: 'Pink',      fill: '#f72585', dark: '#c41e6a' },
-  { name: 'Grey',      fill: '#adb5bd', dark: '#868e96' },
-  { name: 'Beige',     fill: '#d4a373', dark: '#b07d4a' }
+  { name: 'Red',   fill: '#e63946', dark: '#b82d38' },
+  { name: 'Blue',  fill: '#457b9d', dark: '#2e5a75' },
+  { name: 'Yellow',fill: '#f4d35e', dark: '#d4a20a' },
+  { name: 'Green', fill: '#2a9d8f', dark: '#1f7a6a' },
+  { name: 'Purple',fill: '#9d4edd', dark: '#7a37b8' },
+  { name: 'Orange',fill: '#ff6b35', dark: '#cc5225' },
+  { name: 'Pink',  fill: '#f72585', dark: '#c41e6a' },
+  { name: 'Grey',  fill: '#adb5bd', dark: '#868e96' },
+  { name: 'Beige', fill: '#d4a373', dark: '#b07d4a' }
 ];
 
-let triangles = [];
+// Game state
+let stacks = [];       // array of 6 stacks; each stack = [colorIdx, colorIdx, ...]
+let selected = -1;      // currently selected stack index
 let score = 0;
 let gameOver = false;
+let history = [];       // undo stack
 
-function initTriangles() {
-  triangles = [];
+function initGame() {
+  stacks = [];
   for (let i = 0; i < 6; i++) {
-    triangles.push({
-      color: Math.floor(Math.random() * COLORS.length),
-      alive: true
-    });
+    // Each stack starts with 1–3 random triangles
+    const count = Math.floor(Math.random() * 3) + 1;
+    const stack = [];
+    for (let j = 0; j < count; j++) {
+      stack.push(Math.floor(Math.random() * COLORS.length));
+    }
+    stacks.push(stack);
   }
+  selected = -1;
   score = 0;
   gameOver = false;
+  history = [];
   updateUI();
-  statusEl.textContent = 'Click a triangle to remove matching colors';
 }
 
-function getTrianglePos(i) {
+function getSlotPos(i) {
+  // Return the top-center point of the stack at index i
   const angle = (i * Math.PI / 3) + Math.PI / 2;
+  const totalHeight = stacks[i].length * (TRI_H + 5);
   return {
     x: CX + Math.cos(angle) * RADIUS,
-    y: CY + Math.sin(angle) * RADIUS,
-    angle: angle + Math.PI / 2
+    y: CY + Math.sin(angle) * RADIUS - totalHeight - 30,
+    angle: angle + Math.PI / 2,
+    stack: stacks[i]
   };
+}
+
+function getValidTargets(from) {
+  if (from < 0) return [];
+  return [
+    (from + 1) % 6,   // clockwise neighbor
+    (from - 1 + 6) % 6, // counter-clockwise neighbor
+    (from + 3) % 6    // directly across
+  ];
 }
 
 function drawTriangle(cx, cy, angle, colorIdx) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
-
   const color = COLORS[colorIdx];
   ctx.beginPath();
   ctx.moveTo(0, TRI_H);
@@ -105,104 +127,215 @@ function drawTriangle(cx, cy, angle, colorIdx) {
   ctx.fillStyle = color.fill;
   ctx.fill();
   ctx.strokeStyle = color.dark;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 }
 
 function draw() {
   ctx.clearRect(0, 0, W, H);
-  for (let i = 0; i < 6; i++) {
-    if (!triangles[i].alive) continue;
-    const pos = getTrianglePos(i);
-    drawTriangle(pos.x, pos.y, pos.angle, triangles[i].color);
-  }
-  ctx.beginPath();
-  ctx.arc(CX, CY, 3, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.1)';
-  ctx.fill();
-}
 
-function getConsecutiveTriplets() {
-  const toRemove = [];
-  for (let start = 0; start < 6; start++) {
-    let colors = [];
-    for (let i = 0; i < 3; i++) {
-      const idx = (start + i) % 6;
-      if (!triangles[idx].alive) break;
-      colors.push(triangles[idx].color);
+  // Draw dashed lines between adjacent positions
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  for (let i = 0; i < 6; i++) {
+    const a1 = (i * Math.PI / 3) + Math.PI / 2;
+    const a2 = (((i + 1) % 6) * Math.PI / 3) + Math.PI / 2;
+    ctx.beginPath();
+    ctx.arc(CX, CY, RADIUS, a1 - Math.PI / 6, a2 + Math.PI / 6);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Draw valid move connections from selected triangle
+  if (selected >= 0) {
+    const targets = getValidTargets(selected);
+    ctx.strokeStyle = 'rgba(247, 37, 133, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    targets.forEach(t => {
+      const pos = getSlotPos(i);
+      const tar = getSlotPos(t);
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(tar.x, tar.y);
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+  }
+
+  // Draw stacks
+  for (let i = 0; i < 6; i++) {
+    const pos = getSlotPos(i);
+    for (let j = 0; j < stacks[i].length; j++) {
+      const ty = pos.y - (stacks[i].length - 1 - j) * (TRI_H + 5);
+      drawTriangle(pos.x, ty, pos.angle, stacks[i][j]);
     }
-    if (colors.length === 3 && colors[0] === colors[1] && colors[1] === colors[2]) {
-      for (let i = 0; i < 3; i++) {
-        toRemove.push((start + i) % 6);
+
+    // Highlight valid targets
+    if (selected >= 0) {
+      const targets = getValidTargets(selected);
+      if (targets.includes(i) && stacks[i].length < MAX_STACK) {
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y - stacks[i].length * (TRI_H + 5), 8, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(247, 37, 133, 0.8)';
+        ctx.fill();
       }
     }
+
+    // Selection dot
+    if (i === selected) {
+      const topY = pos.y - stacks[i].length * (TRI_H + 5);
+      ctx.beginPath();
+      ctx.arc(pos.x, topY, 8, 0, Math.PI * 2);
+      ctx.fillStyle = '#f72585';
+      ctx.fill();
+    }
+
+    // Stack count badge
+    if (stacks[i].length > 1) {
+      const topY = pos.y - stacks[i].length * (TRI_H + 5);
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.fillText(stacks[i].length, pos.x, topY - 14);
+    }
   }
-  return toRemove;
+
+  // Center label
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillText('FLIIPD', CX, CY - 4);
+}
+
+function findAndRemoveMatching(fromSlot, toSlot) {
+  let removedAny = false;
+  for (let s = 0; s < 6; s++) {
+    if (stacks[s].length < 3) continue;
+    const topColor = stacks[s][stacks[s].length - 1];
+    let run = 1;
+    for (let k = stacks[s].length - 2; k >= 0; k--) {
+      if (stacks[s][k] === topColor) run++;
+      else break;
+    }
+    if (run >= 3) {
+      stacks[s].splice(stacks[s].length - run, run);
+      score += run * 50;        // points per triangle cleared
+      statusEl.textContent = `Cleared ${run} ${COLORS[topColor].name}! +${run * 50}`;
+      removedAny = true;
+    }
+  }
+  if (!removedAny) {
+    statusEl.textContent = 'No stack of 3+ matching colors';
+  }
+}
+
+function updateUI() {
+  const total = stacks.reduce((sum, s) => sum + s.length, 0);
+  const stacksLeft = stacks.filter(s => s.length > 0).length;
+  scoreEl.textContent = `Score: ${score} | Triangles: ${total} | Stacks: ${stacksLeft}/${6}`;
 }
 
 function handleClick(e) {
   if (gameOver) return;
-
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
 
-  let clickedIdx = -1;
+  let clicked = -1;
   for (let i = 0; i < 6; i++) {
-    if (!triangles[i].alive) continue;
-    const pos = getTrianglePos(i);
+    if (stacks[i].length === 0) continue;
+    const pos = getSlotPos(i);
+    const topY = pos.y - stacks[i].length * (TRI_H + 5);
     const dx = mx - pos.x;
-    const dy = my - pos.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < TRI_H + 20) {
-      clickedIdx = i;
+    const dy = my - topY;
+    if (Math.sqrt(dx * dx + dy * dy) < TRI_H + 20) {
+      clicked = i;
       break;
     }
   }
+  if (clicked === -1) return;
 
-  if (clickedIdx === -1) return;
-
-  // Check for matching consecutive triplets
-  const toRemove = getConsecutiveTriplets();
-
-  if (toRemove.length > 0) {
-    // Remove all matching triangles
-    const removed = [];
-    toRemove.forEach(pos => {
-      if (triangles[pos].alive && !removed.includes(pos)) {
-        triangles[pos].alive = false;
-        removed.push(pos);
-      }
-    });
-    score += 100 * (removed.length / 3);
-    statusEl.textContent = `Removed ${removed.length} matching triangles!`;
-  } else {
-    statusEl.textContent = 'No 3 consecutive same colors found';
+  if (selected === -1) {
+    // First click: select
+    selected = clicked;
+    statusEl.textContent = `Selected stack #${clicked + 1}. Click adjacent or across to flip.`;
+    draw();
+    return;
   }
 
+  if (clicked === selected) {
+    // Deselect
+    selected = -1;
+    statusEl.textContent = 'Deselected. Click a stack to select.';
+    draw();
+    return;
+  }
+
+  // Second click: check if it's a valid target
+  const validTargets = getValidTargets(selected);
+  if (!validTargets.includes(clicked)) {
+    statusEl.textContent = 'Invalid! Must click beside or directly across.';
+    draw();
+    return;
+  }
+  if (stacks[clicked].length >= MAX_STACK) {
+    statusEl.textContent = 'Stack is full (max 6).';
+    draw();
+    return;
+  }
+  if (stacks[selected].length === 0) {
+    selected = -1;
+    draw();
+    return;
+  }
+
+  // Flip: pop top triangle from selected, push onto clicked
+  const triColor = stacks[selected].pop();
+  stacks[clicked].push(triColor);
+  score += 5;
+
+  // Check for matching stacks and remove
+  findAndRemoveMatching(selected, clicked);
+
+  selected = -1;
   updateUI();
 
-  if (triangles.every(t => !t.alive)) {
+  // Win/lose check
+  const aliveStacks = stacks.filter(s => s.length > 0).length;
+  if (aliveStacks === 0) {
     gameOver = true;
-    statusEl.textContent = 'You cleared all triangles!';
+    statusEl.textContent = 'You cleared all stacks!';
+  } else if (!canMakeAnyMove()) {
+    gameOver = true;
+    statusEl.textContent = `Game over! No valid moves. Final score: ${score}`;
   }
 
   draw();
 }
 
-function updateUI() {
-  const alive = triangles.filter(t => t.alive).length;
-  scoreEl.textContent = `Score: ${score} | Triangles left: ${alive}`;
+function canMakeAnyMove() {
+  for (let i = 0; i < 6; i++) {
+    if (stacks[i].length === 0) continue;
+    const targets = getValidTargets(i);
+    for (const t of targets) {
+      if (stacks[t].length < MAX_STACK) return true;
+    }
+  }
+  return false;
 }
 
-canvas.addEventListener('click', handleClick);
 resetBtn.addEventListener('click', () => {
-  initTriangles();
+  initGame();
   draw();
 });
 
-initTriangles();
+canvas.addEventListener('click', handleClick);
+
+initGame();
 draw();
 </script>
 
