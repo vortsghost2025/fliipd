@@ -199,44 +199,44 @@ function draw() {
     ctx.setLineDash([]);
   }
 
-  // Draw stacks — draw topmost triangle first so lower ones layer naturally
+  // Draw stacks bottom-up so top triangle naturally layers on top (canvas: later=top)
   for (let i = 0; i < 6; i++) {
     if (stacks[i].length === 0) continue;
     const pos = getSlotPos(i);
-    for (let j = stacks[i].length - 1; j >= 0; j--) {
+    for (let j = 0; j < stacks[i].length; j++) {
       const ty = pos.y - j * (TRI_H + STACK_GAP);
       drawTriangle(pos.x, ty, pos.angle, stacks[i][j]);
     }
 
-    // Highlight valid target slots (display above slot, level with top triangle)
+    // Highlight valid target slots (above the top triangle of the stack)
     if (selected >= 0) {
       const targets = getValidTargets(selected);
       if (targets.includes(i) && stacks[i].length < MAX_STACK) {
-        const dotY = pos.y - TRI_H - 4;
+        const tipY = pos.y - (stacks[i].length - 1) * (TRI_H + STACK_GAP) - TRI_H / 2;
         ctx.beginPath();
-        ctx.arc(pos.x, dotY, 8, 0, Math.PI * 2);
+        ctx.arc(pos.x, tipY, 8, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(247, 37, 133, 0.9)';
         ctx.fill();
       }
     }
 
-    // Selection indicator (on current slot, level with top triangle)
+    // Selection indicator (above the selected stack's top triangle)
     if (i === selected) {
-      const dotY = pos.y - TRI_H - 4;
+      const tipY = pos.y - (stacks[i].length - 1) * (TRI_H + STACK_GAP) - TRI_H / 2;
       ctx.beginPath();
-      ctx.arc(pos.x, dotY, 8, 0, Math.PI * 2);
+      ctx.arc(pos.x, tipY, 8, 0, Math.PI * 2);
       ctx.fillStyle = '#f72585';
       ctx.fill();
     }
 
-    // Stack count badge (above slot)
     if (stacks[i].length > 1) {
-      const badgeY = pos.y - TRI_H - 22;
       ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      ctx.fillText(stacks[i].length, pos.x, badgeY);
+      // Stack count badge: between top-of-stack apex and the triangle tip just above it
+      const countY = pos.y - (stacks[i].length - 1) * (TRI_H + STACK_GAP) - TRI_H / 2 - 12;
+      ctx.fillText(stacks[i].length, pos.x, countY);
     }
   }
 
