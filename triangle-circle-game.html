@@ -138,15 +138,17 @@ function drawTriangle(cx, cy, angle, colorIdx) {
   ctx.translate(cx, cy);
   ctx.rotate(angle);
   const color = COLORS[colorIdx];
+  // Triangle points INWARD (tip at y=0, base at y=+TRI_H)
   ctx.beginPath();
-  ctx.moveTo(0, TRI_H);
-  ctx.lineTo(-TRI_W / 2, 0);
-  ctx.lineTo(TRI_W / 2, 0);
+  ctx.moveTo(0, 0);               // tip (inward)
+  ctx.lineTo(-TRI_W / 2, TRI_H);  // base-left
+  ctx.lineTo(TRI_W / 2, TRI_H);   // base-right
   ctx.closePath();
   ctx.fillStyle = color.fill;
   ctx.fill();
+  // Thick border so each layer is unmistakable even when colors are similar
   ctx.strokeStyle = color.dark;
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 2.5;
   ctx.stroke();
   ctx.restore();
 }
